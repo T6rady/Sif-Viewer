@@ -1,0 +1,29 @@
+SIF Viewer - third-party notices
+
+This distribution contains Python, Qt for Python (PySide6), Shiboken, Qt
+libraries/plugins, Microsoft runtime libraries, and the PyInstaller bootloader.
+The setup program is produced using Inno Setup.
+
+The Qt/PySide6 libraries are dynamically linked and are distributed under the
+applicable open-source license terms, including LGPLv3. License texts bundled
+with the installed Python distributions are included in the licenses folder.
+These components retain their respective copyrights and license conditions.
+
+Qt for Python source and project information:
+https://code.qt.io/pyside/pyside-setup.git/
+https://doc.qt.io/qtforpython-6/licenses.html
+https://www.qt.io/licensing/open-source-lgpl-obligations
+
+PyInstaller source, bootloader exception and license:
+https://github.com/pyinstaller/pyinstaller
+https://pyinstaller.org/en/stable/license.html
+
+Inno Setup source and license:
+https://github.com/jrsoftware/issrc
+https://jrsoftware.org/isinfo.php
+
+Python source and license:
+https://www.python.org/downloads/source/
+https://docs.python.org/3/license.html
+
+These notices do not change the license terms of any bundled component.
