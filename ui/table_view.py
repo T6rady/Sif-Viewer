@@ -59,7 +59,7 @@ class SifTableModel(QAbstractTableModel):
         raw = [f"raw:{code}" for code in result.unknown_codes]
         self.columns = (["warnings"] if result.warnings else []) + list(BASE_CODES) + optional + raw + ["options", "attributes", "unknown"]
         self.default_visible = set(COMPACT_LABELS)
-        self.search_strings = ["\n".join(list(row.fields.values())
+        self.search_strings = ["\n".join(list(row.fields.values()) + list(row.tags)
                                + [value for pairs in (row.options, row.attributes, row.unknown)
                                   for pair in pairs for value in pair]) for row in result.records]
         self.active_item = None

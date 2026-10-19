@@ -60,6 +60,7 @@ class SifRecord:
     unknown: tuple[tuple[str, str], ...]
     warnings: tuple[SifWarning, ...] = ()
     item: int = 0
+    tags: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -109,6 +110,7 @@ def parse_sif(text: str) -> ParseResult:
     options: list[tuple[str, str]] = []
     attributes: list[tuple[str, str]] = []
     unknown: list[tuple[str, str]] = []
+    tags: list[str] = []
     unknown_codes: set[str] = set()
     start = 0
     pending: tuple[str, str, int] | None = None
@@ -127,7 +129,7 @@ def parse_sif(text: str) -> ParseResult:
         for code, value in fields.items():
             if value.strip() and FIELD_DEFINITIONS[code].numeric and numeric_value(value) is None:
                 return f"{code} at product line {start} is not a plain decimal number."
-        records.append(SifRecord(start, fields.copy(), tuple(options), tuple(attributes), tuple(unknown), warnings, len(records) + 1))
+        records.append(SifRecord(start, fields.copy(), tuple(options), tuple(attributes), tuple(unknown), warnings, len(records) + 1, tuple(tags)))
         return ""
 
     if not text.strip():
@@ -160,12 +162,17 @@ def parse_sif(text: str) -> ParseResult:
             fields = {"PN": value}
             field_lines = {"PN": line_number}
             options, attributes, unknown = [], [], []
+            tags = []
         elif not start:
             return failure(f"field {code} at line {line_number} occurs before a PN product boundary.")
         elif code in PAIRS:
             pending = (code, value, line_number)
         elif code in PAIRS.values():
             return failure(f"unpaired {code} at line {line_number}.")
+        elif code == "TG":
+            tags.append(value)
+            fields.setdefault(code, value)
+            field_lines.setdefault(code, line_number)
         elif code in FIELD_DEFINITIONS:
             if code in fields:
                 return failure(f"field {code} is repeated in the product at line {start}.")

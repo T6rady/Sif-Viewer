@@ -1,4 +1,4 @@
-# SIF Viewer 1.4.2
+# SIF Viewer 1.4.3
 
 A read-only Windows desktop viewer for contract furniture `.sif` files. Built
 with Python 3 and PySide6. Opening a file never writes to that file. CSV export
@@ -267,7 +267,11 @@ field identifies its exact raw text line; an absent field points to the product'
 starting raw text line. Both relevant lines are highlighted in Raw View. All
 products remain visible.
 
-If recognized scalar fields are duplicated, pairs are broken, nonblank numeric
+Repeated `TG` side marks are supported, preserving every value in source order.
+The Side mark column displays them separated by ` | `; reversible CSV retains
+each original field separately. This fixes table loading for `KQ160864.sif`.
+
+If other recognized scalar fields are duplicated, pairs are broken, nonblank numeric
 fields are invalid, headers are misplaced, or line structure
 is unsupported, the entire table is unavailable with a specific reason.
 Raw View stays available; no partial table pretends the file was fully parsed.
@@ -396,7 +400,7 @@ licenses.
 The single-file installer is:
 
 ```text
-dist\installer\SIF-Viewer-1.4.2-Setup-x64.exe
+dist\installer\SIF-Viewer-1.4.3-Setup-x64.exe
 ```
 
 Send that Setup EXE to recipients. They do not need the portable folder, Python,

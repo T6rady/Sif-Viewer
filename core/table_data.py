@@ -4,6 +4,8 @@ from core.sif_parser import extended_list_price
 
 
 def record_value(record, code):
+    if code == "TG" and record.tags:
+        return " | ".join(record.tags)
     if code == "options_count":
         return str(len(record.options))
     if code == "extended_list":

@@ -12,6 +12,16 @@ VALID = "SF=Test project\nST=\n" + PRODUCT
 
 
 class ParserTests(unittest.TestCase):
+    def test_repeated_side_marks_preserve_values_and_product_boundaries(self):
+        from core.table_data import record_value
+        result = parse_sif(VALID + "TG=Room 1\nTG=  Chair  \nTG=\nTG=Room 1\n" + PRODUCT + "TG=Desk\n")
+        self.assertTrue(result.available, result.reason)
+        self.assertEqual(result.records[0].tags, ("Room 1", "  Chair  ", "", "Room 1"))
+        self.assertEqual(record_value(result.records[0], "TG"), "Room 1 |   Chair   |  | Room 1")
+        self.assertEqual(result.records[1].tags, ("Desk",))
+        self.assertEqual(record_value(result.records[1], "TG"), "Desk")
+        self.assertEqual(parse_sif(VALID).records[0].tags, ())
+
     def test_documented_fields(self):
         result = parse_sif(VALID)
         self.assertTrue(result.available, result.reason)
