@@ -18,7 +18,7 @@ BASE_CODES = ("MC", "PN", "PD", "options_count", "QT", "PL", "extended_list", "S
               "attribute_descriptions", "S%", "B%", "PV")
 LABELS = {
     "options_count": "Option count",
-    "warnings": "Missing / blank fields",
+    "warnings": "Item warnings",
     "option_codes": "Option codes (ON)",
     "option_descriptions": "Option descriptions (OD)",
     "attribute_codes": "Attribute codes / notes (AN)",

@@ -36,7 +36,7 @@ FIELD_DEFINITIONS = {
 REQUIRED = tuple(code for code, field in FIELD_DEFINITIONS.items() if field.required)
 HEADERS = {"SF", "ST"}
 PAIRS = {"ON": "OD", "AN": "AD"}
-CODE_PATTERN = re.compile(r"[A-Za-z][A-Za-z0-9_%\-]{0,31}\Z")
+CODE_PATTERN = re.compile(r"[A-Za-z0-9][A-Za-z0-9_%\-]{0,31}\Z")
 NUMBER_PATTERN = re.compile(r"[+-]?(?:[0-9]+(?:\.[0-9]*)?|\.[0-9]+)\Z")
 
 
@@ -61,6 +61,7 @@ class SifRecord:
     warnings: tuple[SifWarning, ...] = ()
     item: int = 0
     tags: tuple[str, ...] = ()
+    repeated_fields: tuple[tuple[str, str], ...] = ()
 
 
 @dataclass(frozen=True)
@@ -111,6 +112,7 @@ def parse_sif(text: str) -> ParseResult:
     attributes: list[tuple[str, str]] = []
     unknown: list[tuple[str, str]] = []
     tags: list[str] = []
+    repeated_fields: list[tuple[str, str]] = []
     unknown_codes: set[str] = set()
     start = 0
     pending: tuple[str, str, int] | None = None
@@ -120,7 +122,7 @@ def parse_sif(text: str) -> ParseResult:
 
     def finish() -> str:
         missing = [key for key in REQUIRED if key not in fields or not fields[key].strip()]
-        warnings = tuple(
+        warnings = list(
             SifWarning(field_lines.get(code, start),
                        f"{FIELD_DEFINITIONS[code].label} ({code}) is "
                        f"{'empty' if code in fields else 'missing'}.", len(records) + 1)
@@ -128,8 +130,9 @@ def parse_sif(text: str) -> ParseResult:
         )
         for code, value in fields.items():
             if value.strip() and FIELD_DEFINITIONS[code].numeric and numeric_value(value) is None:
-                return f"{code} at product line {start} is not a plain decimal number."
-        records.append(SifRecord(start, fields.copy(), tuple(options), tuple(attributes), tuple(unknown), warnings, len(records) + 1, tuple(tags)))
+                warnings.append(SifWarning(field_lines[code],
+                    f"{code} is not a plain decimal number; its source text is retained and calculations using it are unavailable.", len(records) + 1))
+        records.append(SifRecord(start, fields.copy(), tuple(options), tuple(attributes), tuple(unknown), tuple(warnings), len(records) + 1, tuple(tags), tuple(repeated_fields)))
         return ""
 
     if not text.strip():
@@ -163,8 +166,14 @@ def parse_sif(text: str) -> ParseResult:
             field_lines = {"PN": line_number}
             options, attributes, unknown = [], [], []
             tags = []
+            repeated_fields = []
         elif not start:
-            return failure(f"field {code} at line {line_number} occurs before a PN product boundary.")
+            # Exporters include additional file-level metadata (DT, TM, etc.).
+            # Preserve it in order without guessing its meaning or assigning it
+            # to the first product. Known product fields still signal ambiguity.
+            if code in FIELD_DEFINITIONS or code in PAIRS or code in PAIRS.values():
+                return failure(f"field {code} at line {line_number} occurs before a PN product boundary.")
+            headers.append((code, value))
         elif code in PAIRS:
             pending = (code, value, line_number)
         elif code in PAIRS.values():
@@ -175,7 +184,13 @@ def parse_sif(text: str) -> ParseResult:
             field_lines.setdefault(code, line_number)
         elif code in FIELD_DEFINITIONS:
             if code in fields:
-                return failure(f"field {code} is repeated in the product at line {start}.")
+                if not any(key == code for key, _ in repeated_fields):
+                    repeated_fields.append((code, fields[code]))
+                repeated_fields.append((code, value))
+                # Joining makes ambiguous numeric fields nonnumeric, so totals
+                # never silently select one of several supplied prices/quantities.
+                fields[code] += " | " + value
+                continue
             fields[code] = value
             field_lines[code] = line_number
         else:
@@ -183,7 +198,7 @@ def parse_sif(text: str) -> ParseResult:
             unknown_codes.add(code)
     if pending:
         return failure(f"{pending[0]} at line {pending[2]} has no paired description.")
-    if not headers:
+    if not any(code in HEADERS for code, _ in headers):
         return failure("this dialect requires an SF or ST file header.")
     if not start:
         return failure("no PN product records were found.")

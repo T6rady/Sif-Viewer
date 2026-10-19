@@ -1,4 +1,4 @@
-# SIF Viewer 1.4.3
+# SIF Viewer 1.4.4
 
 A read-only Windows desktop viewer for contract furniture `.sif` files. Built
 with Python 3 and PySide6. Opening a file never writes to that file. CSV export
@@ -239,7 +239,9 @@ the value. An `SF` or `ST` header is required. Each `PN` starts a product. The
 standard expects `PD`, `MC`, `QT`, and `PL` fields, but missing or empty product
 fields produce warnings rather than blocking the table. Their cells remain blank;
 no values are filled in or guessed. Nonblank quantities and list prices must be
-plain decimal numbers. The UI preserves source spelling and assumes no
+plain decimal numbers to participate in calculations. Other numeric text remains
+visible with an item warning; it does not prevent the table from opening.
+The UI preserves source spelling and assumes no
 currency. `MC` is the source manufacturer/vendor **code**; it is never expanded
 into a guessed company name.
 
@@ -267,12 +269,24 @@ field identifies its exact raw text line; an absent field points to the product'
 starting raw text line. Both relevant lines are highlighted in Raw View. All
 products remain visible.
 
-Repeated `TG` side marks are supported, preserving every value in source order.
-The Side mark column displays them separated by ` | `; reversible CSV retains
-each original field separately. This fixes table loading for `KQ160864.sif`.
+Repeated product fields are supported, preserving every value in source order.
+Their columns display values separated by ` | `; reversible CSV retains each
+original field separately. Conflicting repeated numbers are excluded from
+calculations and flagged, rather than choosing a quantity or price.
+Extra fields before the first product are retained as file metadata without
+guessing their meanings. Field codes may start with digits, including `3D`.
+These variations cover the supplied HON, KI, Riverbend, hospital, and other
+furniture exports without adding a special rule for each filename.
 
-If other recognized scalar fields are duplicated, pairs are broken, nonblank numeric
-fields are invalid, headers are misplaced, or line structure
+Version 1.4.4 was checked against all 20 available sample SIF files, including
+opening every file sequentially through the application window. The table
+row counts match every source `PN` boundary, and each file survives a byte-identical
+reversible CSV round trip without changing its source hash or modification time.
+The additional samples include `01579293-B.sif` (24 products),
+`15916_Russel Hospital BID.sif` (37), `Hon sif file.Sif` (47), `KI sif.sif` (50),
+and the Riverbend workstations export (80). Private source files are not bundled.
+
+If pairs are broken, headers are misplaced, or line structure
 is unsupported, the entire table is unavailable with a specific reason.
 Raw View stays available; no partial table pretends the file was fully parsed.
 
@@ -400,7 +414,7 @@ licenses.
 The single-file installer is:
 
 ```text
-dist\installer\SIF-Viewer-1.4.3-Setup-x64.exe
+dist\installer\SIF-Viewer-1.4.4-Setup-x64.exe
 ```
 
 Send that Setup EXE to recipients. They do not need the portable folder, Python,

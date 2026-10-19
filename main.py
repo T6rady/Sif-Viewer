@@ -17,7 +17,7 @@ def main():
         ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("ORI.SIFViewer")
     app = QApplication(sys.argv)
     app.setApplicationName("SIF Viewer")
-    app.setApplicationVersion("1.4.3")
+    app.setApplicationVersion("1.4.4")
     app.setOrganizationName("ORI")
     icon = QIcon(str(Path(__file__).resolve().parent / "assets" / "app.ico"))
     app.setWindowIcon(icon)

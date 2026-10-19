@@ -12,6 +12,16 @@ VALID = "SF=Test project\nST=\n" + PRODUCT
 
 
 class ParserTests(unittest.TestCase):
+    def test_exporter_metadata_and_numeric_leading_codes(self):
+        text = "SF=Example\nST=CompassSIF\nDT=9/18/2026\nTM=10:58 AM\nNR=0\nDT=\n" + PRODUCT + "3D=\n3D=model\n"
+        result = parse_sif(text)
+        self.assertTrue(result.available, result.reason)
+        self.assertEqual(result.headers[-4:], (("DT", "9/18/2026"), ("TM", "10:58 AM"), ("NR", "0"), ("DT", "")))
+        self.assertEqual(result.records[0].unknown, (("3D", ""), ("3D", "model")))
+        self.assertEqual(result.unknown_codes, ("3D",))
+        self.assertEqual(len(result.records), 1)
+        self.assertFalse(parse_sif("DT=example\n" + PRODUCT).available)
+
     def test_repeated_side_marks_preserve_values_and_product_boundaries(self):
         from core.table_data import record_value
         result = parse_sif(VALID + "TG=Room 1\nTG=  Chair  \nTG=\nTG=Room 1\n" + PRODUCT + "TG=Desk\n")
@@ -91,7 +101,7 @@ class ParserTests(unittest.TestCase):
     def test_ambiguous_structures_are_rejected(self):
         for text in (VALID + "ON=A\n", VALID + "OD=Black\n",
                      VALID + "AN=X\nOD=wrong\n", VALID + "ON=A\nQT=2\nOD=B\n",
-                     VALID + "QT=8\n", VALID + "ST=another\n", "SF=A\nSF=B\n" + PRODUCT,
+                     VALID + "ST=another\n", "SF=A\nSF=B\n" + PRODUCT,
                      "PD=prelude\n" + VALID, PRODUCT, "SF=X\n", "hello", "", " \n\t",
                      VALID + " continuation\n", VALID + " =unknown\n"):
             with self.subTest(text=text):
@@ -103,7 +113,22 @@ class ParserTests(unittest.TestCase):
     def test_invalid_numeric_fields(self):
         for value in ("NaN", "Infinity", "$100", "1,000", "1e4", "1.2.3"):
             with self.subTest(value=value):
-                self.assertFalse(parse_sif(VALID.replace("QT=2.0", "QT=" + value)).available)
+                result = parse_sif(VALID.replace("QT=2.0", "QT=" + value))
+                self.assertTrue(result.available, result.reason)
+                self.assertEqual(result.records[0].fields["QT"], value)
+                self.assertIn("not a plain decimal", result.warnings[0].message)
+                self.assertEqual(extended_list_price(result.records[0]), "")
+
+    def test_repeated_fields_preserve_all_values_without_guessing_numbers(self):
+        result = parse_sif(VALID + "GC=Group A\nGC=Group B\nQT=8\n" + PRODUCT)
+        self.assertTrue(result.available, result.reason)
+        first, second = result.records
+        self.assertEqual(first.fields["GC"], "Group A | Group B")
+        self.assertEqual(first.repeated_fields, (("GC", "Group A"), ("GC", "Group B"), ("QT", "2.0"), ("QT", "8")))
+        self.assertEqual(extended_list_price(first), "")
+        self.assertTrue(first.warnings)
+        self.assertFalse(second.repeated_fields)
+        self.assertEqual(extended_list_price(second), "201.000")
 
     def test_numeric_values_remain_strings(self):
         result = parse_sif(VALID.replace("PL=100.50", "PL=00100.500"))
