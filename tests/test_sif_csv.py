@@ -10,7 +10,7 @@ from unittest.mock import Mock, patch
 
 from core.csv_exporter import ExportCancelled
 from core.file_reader import read_file
-from core.sif_csv import ConversionError, export_reversible_csv, import_reversible_csv
+from core.sif_csv import HEADINGS, ConversionError, export_reversible_csv, import_reversible_csv
 from core.sif_parser import parse_sif
 from tests.test_sif_parser import VALID
 
@@ -165,6 +165,23 @@ class ReversibleCsvTests(unittest.TestCase):
 
     def test_large_field_exceeds_standard_csv_parser_default(self):
         self.round_trip(VALID.encode() + b"PS=" + b"a" * 150_000)
+
+    def test_structure_limits_preserve_existing_conversion_destinations(self):
+        self.export()
+        self.output.write_bytes(b'keep')
+        for name, maximum in (('MAX_TEXT_LINES', 2), ('MAX_LINE_CHARACTERS', 8)):
+            with self.subTest(limit=name), patch('core.sif_csv.' + name, maximum):
+                with self.assertRaises(ConversionError):
+                    import_reversible_csv(self.csv, self.output)
+            self.assertEqual(self.output.read_bytes(), b'keep')
+            self.assertEqual(list(self.root.glob('.sif-convert-*')), [])
+
+    def test_many_csv_columns_fail_before_large_row_allocation(self):
+        self.csv.write_text(','.join(HEADINGS) + '\n' + ',' * 10000, encoding='utf-8')
+        with patch('core.sif_csv.MAX_LINE_CHARACTERS', 64):
+            with self.assertRaisesRegex(ConversionError, 'physical-line'):
+                import_reversible_csv(self.csv, self.output)
+        self.assertFalse(self.output.exists())
 
     def test_literal_rows_cannot_hide_fields_and_unicode_requires_bom(self):
         self.export()

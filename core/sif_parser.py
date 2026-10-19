@@ -8,6 +8,9 @@ verbatim. Extend that registry only with a documented definition and tests.
 from dataclasses import dataclass
 from decimal import Decimal, InvalidOperation, localcontext
 import re
+from core.resource_limits import (MAX_PRODUCTS, MAX_UNKNOWN_CODES, MAX_PRODUCT_FIELDS,
+    MAX_PRODUCT_CHARACTERS, MAX_HEADER_FIELDS, MAX_HEADER_CHARACTERS,
+    MAX_NUMERIC_CHARACTERS, ResourceLimitError, text_lines)
 
 
 @dataclass(frozen=True)
@@ -80,7 +83,9 @@ class ParseResult:
         return tuple(warning for record in self.records for warning in record.warnings)
 
 
-def numeric_value(value: str) -> Decimal | None:
+def numeric_value(value: str, max_characters=MAX_NUMERIC_CHARACTERS) -> Decimal | None:
+    if len(value) > max_characters:
+        return None
     candidate = value.strip()
     if not NUMBER_PATTERN.fullmatch(candidate):
         return None
@@ -102,7 +107,14 @@ def extended_list_price(record: SifRecord) -> str:
         return format(quantity * price, "f")
 
 
-def parse_sif(text: str) -> ParseResult:
+def parse_sif(text: str, cancelled=lambda: False) -> ParseResult:
+    try:
+        return _parse_sif(text, cancelled)
+    except ResourceLimitError as exc:
+        return ParseResult(reason=f"Table View unavailable: {exc} Raw View remains available.")
+
+
+def _parse_sif(text, cancelled) -> ParseResult:
     """Reject ambiguous grouping instead of inventing or silently dropping data."""
     headers: list[tuple[str, str]] = []
     records: list[SifRecord] = []
@@ -113,6 +125,8 @@ def parse_sif(text: str) -> ParseResult:
     unknown: list[tuple[str, str]] = []
     tags: list[str] = []
     repeated_fields: list[tuple[str, str]] = []
+    scalar_values: dict[str, list[str]] = {}
+    product_fields = product_characters = header_characters = 0
     unknown_codes: set[str] = set()
     start = 0
     pending: tuple[str, str, int] | None = None
@@ -121,6 +135,9 @@ def parse_sif(text: str) -> ParseResult:
         return ParseResult(reason=f"Table View unavailable: {message} Raw View remains available.")
 
     def finish() -> str:
+        for code, values in scalar_values.items():
+            if len(values) > 1:
+                fields[code] = " | ".join(values)
         missing = [key for key in REQUIRED if key not in fields or not fields[key].strip()]
         warnings = list(
             SifWarning(field_lines.get(code, start),
@@ -131,18 +148,28 @@ def parse_sif(text: str) -> ParseResult:
         for code, value in fields.items():
             if value.strip() and FIELD_DEFINITIONS[code].numeric and numeric_value(value) is None:
                 warnings.append(SifWarning(field_lines[code],
-                    f"{code} is not a plain decimal number; its source text is retained and calculations using it are unavailable.", len(records) + 1))
+                    (f"{code} exceeds the {MAX_NUMERIC_CHARACTERS}-character numeric limit" if len(value) > MAX_NUMERIC_CHARACTERS else f"{code} is not a plain decimal number")
+                    + "; its source text is retained and calculations using it are unavailable.", len(records) + 1))
         records.append(SifRecord(start, fields.copy(), tuple(options), tuple(attributes), tuple(unknown), tuple(warnings), len(records) + 1, tuple(tags), tuple(repeated_fields)))
         return ""
 
     if not text.strip():
         return failure("the file is empty or contains only whitespace.")
-    for line_number, line in enumerate(re.split(r"\r\n|\r|\n", text), 1):
+    for line_number, line, _ in text_lines(text, cancelled):
         if not line.strip():
             continue
         code, separator, value = line.partition("=")
         if not separator or not CODE_PATTERN.fullmatch(code):
             return failure(f"line {line_number} is not a supported CODE=VALUE field.")
+        if start and code != "PN":
+            product_fields += 1
+            product_characters += len(line)
+            if product_fields > MAX_PRODUCT_FIELDS or product_characters > MAX_PRODUCT_CHARACTERS:
+                raise ResourceLimitError(f"Item {len(records) + 1} exceeds the {MAX_PRODUCT_FIELDS:,}-field or {MAX_PRODUCT_CHARACTERS:,}-character product limit.")
+        elif not start and code != "PN":
+            header_characters += len(line)
+            if len(headers) >= MAX_HEADER_FIELDS or header_characters > MAX_HEADER_CHARACTERS:
+                raise ResourceLimitError("File metadata exceeds the header resource limits.")
         if pending:
             pending_code, pending_value, pending_line = pending
             if code != PAIRS[pending_code]:
@@ -161,8 +188,12 @@ def parse_sif(text: str) -> ParseResult:
                 error = finish()
                 if error:
                     return failure(error)
+            if len(records) >= MAX_PRODUCTS:
+                raise ResourceLimitError(f"File exceeds the {MAX_PRODUCTS:,}-product table limit.")
             start = line_number
             fields = {"PN": value}
+            scalar_values = {"PN": [value]}
+            product_fields, product_characters = 1, len(line)
             field_lines = {"PN": line_number}
             options, attributes, unknown = [], [], []
             tags = []
@@ -184,18 +215,21 @@ def parse_sif(text: str) -> ParseResult:
             field_lines.setdefault(code, line_number)
         elif code in FIELD_DEFINITIONS:
             if code in fields:
-                if not any(key == code for key, _ in repeated_fields):
+                if len(scalar_values[code]) == 1:
                     repeated_fields.append((code, fields[code]))
                 repeated_fields.append((code, value))
                 # Joining makes ambiguous numeric fields nonnumeric, so totals
                 # never silently select one of several supplied prices/quantities.
-                fields[code] += " | " + value
+                scalar_values[code].append(value)
                 continue
             fields[code] = value
+            scalar_values[code] = [value]
             field_lines[code] = line_number
         else:
             unknown.append((code, value))
             unknown_codes.add(code)
+            if len(unknown_codes) > MAX_UNKNOWN_CODES:
+                raise ResourceLimitError(f"File exceeds the {MAX_UNKNOWN_CODES}-uninterpreted-column table limit.")
     if pending:
         return failure(f"{pending[0]} at line {pending[2]} has no paired description.")
     if not any(code in HEADERS for code, _ in headers):

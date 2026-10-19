@@ -11,6 +11,8 @@ from core.table_summary import summarize
 from core.table_data import record_value
 from ui.details_panel import DetailsPanel, money, quantity_text
 from ui.theme import colors_for
+from ui.plain_text import plain_tooltip
+from core.resource_limits import MAX_CALCULATED_CHARACTERS, MAX_NUMERIC_CHARACTERS
 
 
 BASE_CODES = ("MC", "PN", "PD", "options_count", "QT", "PL", "extended_list", "S-", "P%",
@@ -99,7 +101,7 @@ class SifTableModel(QAbstractTableModel):
                 details += "\nSource values in occurrence order. This field's meaning is not interpreted."
             elif code in ("option_codes", "option_descriptions", "attribute_codes", "attribute_descriptions"):
                 details += "\nRepeated values are separated by | in source order; paired codes/descriptions use the same order."
-            return (f"Item {row.item} in original file order\nRaw text starts at line {row.line}\n{value}"
+            return plain_tooltip(f"Item {row.item} in original file order\nRaw text starts at line {row.line}\n{value}"
                     + (f"\n{details}" if details else ""))
         return value
 
@@ -145,7 +147,8 @@ class NumericSortProxy(QSortFilterProxyModel):
         code = self.sourceModel().columns[left.column()]
         a, b = left.data(), right.data()
         if numeric_column(code):
-            number_a, number_b = numeric_value(a), numeric_value(b)
+            limit = MAX_CALCULATED_CHARACTERS if code == "extended_list" else MAX_NUMERIC_CHARACTERS
+            number_a, number_b = numeric_value(a, limit), numeric_value(b, limit)
             if number_a is not None and number_b is not None:
                 return number_a < number_b
             if (number_a is None) != (number_b is None):
@@ -290,6 +293,7 @@ class TableView(QWidget):
         self.note.setWordWrap(True)
         self.note.setTextFormat(Qt.TextFormat.PlainText)
         self.source = QLabel()
+        self.source.setTextFormat(Qt.TextFormat.PlainText)
         self.source.setObjectName("muted")
         info.addWidget(self.note)
         info.addWidget(self.source)
@@ -407,10 +411,10 @@ class TableView(QWidget):
         headers = dict(result.headers)
         source_text = headers.get("SF", headers.get("ST", ""))
         self.source.setText("Source file  " + self.source.fontMetrics().elidedText(source_text, Qt.TextElideMode.ElideMiddle, 145) if source_text else "")
-        self.source.setToolTip("\n".join(f"{key}={value}" for key, value in result.headers))
+        self.source.setToolTip(plain_tooltip("\n".join(f"{key}={value}" for key, value in result.headers)))
         warnings = [row for row in result.records if row.warnings]
         self.warning_button.setText(f"{len(warnings)} items need attention")
-        self.warning_button.setToolTip("\n".join(w.text for w in result.warnings))
+        self.warning_button.setToolTip(plain_tooltip("\n".join(w.text for row in warnings[:64] for w in row.warnings)))
         self.warning_button.setVisible(bool(warnings))
         self.unknown_button.setVisible(bool(result.unknown_codes))
         self._loading = False

@@ -6,15 +6,16 @@ from PySide6.QtWidgets import (QAbstractItemView, QApplication, QFrame, QGridLay
                                QScrollArea, QTableView, QVBoxLayout, QWidget)
 
 from core.sif_parser import extended_list_price, numeric_value
+from core.resource_limits import MAX_CALCULATED_CHARACTERS
 
 
 def money(value, currency=""):
-    number = numeric_value(str(value)) if value is not None else None
+    number = numeric_value(str(value), MAX_CALCULATED_CHARACTERS) if value is not None else None
     return ((currency + " ") if currency else "") + format(number, ",.2f") if number is not None else "—"
 
 
 def quantity_text(value):
-    number = numeric_value(str(value)) if value is not None else None
+    number = numeric_value(str(value), MAX_CALCULATED_CHARACTERS) if value is not None else None
     return format(number, ",f").rstrip("0").rstrip(".") if number is not None and number.as_tuple().exponent < 0 else format(number, ",f") if number is not None else "—"
 
 

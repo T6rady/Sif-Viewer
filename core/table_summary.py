@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from decimal import Decimal, localcontext
 
 from core.sif_parser import extended_list_price, numeric_value
+from core.resource_limits import MAX_CALCULATED_CHARACTERS
 
 
 @dataclass(frozen=True)
@@ -29,7 +30,7 @@ def summarize(records):
     quantities, extended = [], []
     for record in records:
         quantity = numeric_value(record.fields.get("QT", ""))
-        price = numeric_value(extended_list_price(record))
+        price = numeric_value(extended_list_price(record), MAX_CALCULATED_CHARACTERS)
         if quantity is not None:
             quantities.append(quantity)
         if price is not None:

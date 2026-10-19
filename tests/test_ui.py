@@ -25,6 +25,36 @@ from ui.main_window import MainWindow
 
 
 class UiTests(unittest.TestCase):
+    def test_file_markup_stays_literal_in_headers_cells_tooltips_and_dialogs(self):
+        from PySide6.QtGui import QTextDocument
+        from ui.plain_text import plain_tooltip, MAX_TOOLTIP_CHARACTERS
+        payload = '<b>File</b><img src="//invalid/image"> & text'
+        self.path.write_text(VALID.replace('SF=Test project', 'SF=' + payload).replace('PD=Chair = blue  ', 'PD=' + payload), encoding='utf-8')
+        self.open_file()
+        self.assertEqual(self.window.table.source.textFormat(), Qt.TextFormat.PlainText)
+        self.assertIn('&lt;img', self.window.table.source.toolTip())
+        model = self.window.table.model
+        index = model.index(0, model.columns.index('PD'))
+        self.assertEqual(index.data(), payload)
+        tooltip = index.data(Qt.ItemDataRole.ToolTipRole)
+        self.assertNotIn('<img', tooltip)
+        document = QTextDocument()
+        document.setHtml(plain_tooltip(payload))
+        self.assertEqual(document.toPlainText(), payload)
+        self.assertLess(len(plain_tooltip('x' * 100_000)), MAX_TOOLTIP_CHARACTERS + 200)
+        with patch('ui.main_window.QMessageBox.warning') as warning:
+            self.window._load_failed(payload)
+        self.assertNotIn('<img', warning.call_args.args[2])
+
+    def test_raw_resource_limit_keeps_previous_document(self):
+        self.open_file()
+        previous = self.window.raw.toPlainText()
+        self.path.write_bytes(b'x' * 100)
+        with patch('core.resource_limits.MAX_LINE_CHARACTERS', 50), patch('ui.main_window.QMessageBox.warning') as warning:
+            self.open_file()
+        self.assertIn('character limit', warning.call_args.args[2])
+        self.assertEqual(self.window.raw.toPlainText(), previous)
+
     @classmethod
     def setUpClass(cls):
         cls.app = QApplication.instance() or QApplication([])

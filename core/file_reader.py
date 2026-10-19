@@ -7,8 +7,8 @@ be identified conclusively: Windows-1252 is a labelled fallback, not a claim.
 from dataclasses import dataclass
 from pathlib import Path
 import codecs
-import re
 import unicodedata
+from core.resource_limits import ResourceLimitError, text_lines
 
 
 MAX_FILE_BYTES = 64 * 1024 * 1024
@@ -88,7 +88,7 @@ def decode_text(data: bytes) -> tuple[str, str, str]:
     return text, label, note
 
 
-def read_file(path: str | Path, max_bytes: int = MAX_FILE_BYTES) -> TextFile:
+def read_file(path: str | Path, max_bytes: int = MAX_FILE_BYTES, cancelled=lambda: False) -> TextFile:
     """Read a bounded snapshot; preserve whitespace, order and line endings."""
     source = Path(path).expanduser().absolute()
     try:
@@ -102,9 +102,13 @@ def read_file(path: str | Path, max_bytes: int = MAX_FILE_BYTES) -> TextFile:
     if len(data) > max_bytes:
         raise FileReadError("The file grew beyond the viewing limit while being read.")
     text, encoding, note = decode_text(data)
-    endings = re.findall(r"\r\n|\r|\n", text)
+    lines, endings = 0, set()
+    try:
+        for lines, _, ending in text_lines(text, cancelled):
+            if ending:
+                endings.add(ending)
+    except ResourceLimitError as exc:
+        raise FileReadError(str(exc)) from exc
     styles = {"\r\n": "CRLF", "\r": "CR", "\n": "LF"}
     newline_style = ", ".join(styles[e] for e in styles if e in set(endings)) or "None"
-    # Count physical lines, excluding the empty editor block after a final EOL.
-    lines = len(endings) + (1 if text and not text.endswith(("\r", "\n")) else 0)
     return TextFile(source, text, len(data), encoding, lines, newline_style, note)

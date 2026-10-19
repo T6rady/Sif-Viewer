@@ -11,6 +11,8 @@ import tempfile
 from core.csv_exporter import ExportCancelled
 from core.file_reader import MAX_FILE_BYTES, FileReadError, decode_text
 from core.sif_parser import CODE_PATTERN
+from core.resource_limits import (MAX_LINE_CHARACTERS, MAX_TEXT_LINES,
+                                  ResourceLimitError, text_lines)
 
 
 class ConversionError(Exception):
@@ -30,7 +32,7 @@ ENCODINGS = {
     "cp1252": b"",
 }
 # CSV's default 128 KiB limit is smaller than a supported SIF field.
-csv.field_size_limit(max(csv.field_size_limit(), MAX_FILE_BYTES))
+csv.field_size_limit(MAX_LINE_CHARACTERS + 64)
 
 
 def _check_cancelled(cancelled):
@@ -114,10 +116,8 @@ def export_reversible_csv(path, document, cancelled=lambda: False):
             if document.encoding_note:
                 writer.writerow(("meta", "", "", "encoding_note", document.encoding_note, ""))
             item = 0
-            for match in re.finditer(r"([^\r\n]*)(\r\n|\r|\n)|([^\r\n]+)$", document.text):
+            for _, line, ending in text_lines(document.text):
                 _check_cancelled(cancelled)
-                line = match[1] if match[1] is not None else match[3]
-                ending = match[2] or ""
                 code, value = _field(line)
                 if code == "PN":
                     item += 1
@@ -129,7 +129,10 @@ def export_reversible_csv(path, document, cancelled=lambda: False):
             stream.detach()
         return count
 
-    return _atomic_write(path, (document.path,), ".csv", write, cancelled)
+    try:
+        return _atomic_write(path, (document.path,), ".csv", write, cancelled)
+    except ResourceLimitError as exc:
+        raise ConversionError(str(exc)) from exc
 
 
 def _positive(value, label):
@@ -140,7 +143,13 @@ def _positive(value, label):
 
 def _decode_csv(data, cancelled):
     try:
-        reader = csv.reader(io.StringIO(data.decode("utf-8-sig"), newline=""), strict=True)
+        def bounded_lines():
+            for number, line in enumerate(io.StringIO(data.decode("utf-8-sig"), newline=""), 1):
+                _check_cancelled(cancelled)
+                if number > MAX_TEXT_LINES + 8 or len(line) > 2 * MAX_LINE_CHARACTERS + 512:
+                    raise ConversionError("CSV exceeds the physical-line count or length resource limit.")
+                yield line
+        reader = csv.reader(bounded_lines(), strict=True)
         if next(reader, None) != list(HEADINGS):
             raise ConversionError("This is not a reversible SIF CSV. The readable table export cannot be converted to SIF.")
         metadata, rows = {}, {}
@@ -155,6 +164,8 @@ def _decode_csv(data, cancelled):
                 metadata[code] = value
                 continue
             number = _positive(sequence, "Sequence")
+            if len(rows) >= MAX_TEXT_LINES:
+                raise ConversionError(f"CSV exceeds the {MAX_TEXT_LINES:,}-row conversion limit.")
             if number in rows:
                 raise ConversionError(f"Sequence {number} is repeated.")
             if kind not in {"field", "text"} or eol not in ENDINGS:
@@ -169,6 +180,8 @@ def _decode_csv(data, cancelled):
                 if code or _field(value)[0] or (not value and eol == "NONE"):
                     raise ConversionError(f"Invalid literal text at sequence {number}.")
                 line = value
+            if len(line) > MAX_LINE_CHARACTERS:
+                raise ConversionError(f"Sequence {number} exceeds the {MAX_LINE_CHARACTERS:,}-character SIF line limit.")
             rows[number] = (item, code, line, eol)
         if metadata.get("format") != FORMAT:
             raise ConversionError("Missing or unsupported reversible CSV format version.")
@@ -198,9 +211,11 @@ def _decode_csv(data, cancelled):
             if len(output) > MAX_FILE_BYTES:
                 raise ConversionError("The reconstructed SIF exceeds the 64 MiB limit.")
         # Reject unsupported controls and invalid text even in literal rows.
-        decode_text(bytes(output))
+        text, _, _ = decode_text(bytes(output))
+        for _ in text_lines(text):
+            _check_cancelled(cancelled)
         return bytes(output), len(rows)
-    except (UnicodeError, csv.Error, FileReadError) as exc:
+    except (UnicodeError, csv.Error, FileReadError, ResourceLimitError) as exc:
         raise ConversionError(f"Invalid reversible CSV: {exc}") from exc
 
 

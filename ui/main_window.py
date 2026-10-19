@@ -16,6 +16,8 @@ from core.windows_defaults import is_default_sif_app
 from ui.raw_view import RawView
 from ui.table_view import TableView
 from ui.theme import palette_for, stylesheet_for
+from ui.plain_text import plain_tooltip
+from core.resource_limits import ProcessingCancelled
 
 
 class LoadWorker(QThread):
@@ -28,12 +30,14 @@ class LoadWorker(QThread):
 
     def run(self):
         try:
-            document = read_file(self.path)
+            document = read_file(self.path, cancelled=self.isInterruptionRequested)
             if self.isInterruptionRequested():
                 return
-            parsed = parse_sif(document.text)
+            parsed = parse_sif(document.text, self.isInterruptionRequested)
             if not self.isInterruptionRequested():
                 self.succeeded.emit(document, parsed)
+        except ProcessingCancelled:
+            pass
         except FileReadError as exc:
             self.failed.emit(str(exc))
         except Exception as exc:
@@ -465,7 +469,7 @@ class MainWindow(QMainWindow):
             if not target.suffix:
                 target = target.with_suffix(".csv")
                 if target.exists() and QMessageBox.question(
-                        self, "Replace CSV?", f"{target.name} already exists. Replace it?",
+                        self, "Replace CSV?", plain_tooltip(f"{target.name} already exists. Replace it?"),
                         QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
                         QMessageBox.StandardButton.No) != QMessageBox.StandardButton.Yes:
                     return
@@ -480,7 +484,7 @@ class MainWindow(QMainWindow):
         if not target.suffix:
             target = target.with_suffix(suffix)
             if target.exists() and QMessageBox.question(
-                    self, "Replace destination?", f"{target.name} already exists. Replace it?",
+                    self, "Replace destination?", plain_tooltip(f"{target.name} already exists. Replace it?"),
                     QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
                     QMessageBox.StandardButton.No) != QMessageBox.StandardButton.Yes:
                 return None
@@ -526,7 +530,7 @@ class MainWindow(QMainWindow):
     def _conversion_failed(self, message):
         if not self._closing:
             self.statusBar().showMessage("Conversion failed", 8000)
-            QMessageBox.warning(self, "Cannot Convert File", message)
+            QMessageBox.warning(self, "Cannot Convert File", plain_tooltip(message))
 
     def start_export(self, path):
         if not self.export_action.isEnabled():
@@ -548,7 +552,7 @@ class MainWindow(QMainWindow):
     def _export_failed(self, message):
         if not self._closing:
             self.statusBar().showMessage("CSV export failed", 8000)
-            QMessageBox.warning(self, "Cannot Export CSV", message)
+            QMessageBox.warning(self, "Cannot Export CSV", plain_tooltip(message))
 
     def _export_finished(self, worker):
         converted = (worker.result_path if isinstance(worker, ConversionWorker)
@@ -587,12 +591,12 @@ class MainWindow(QMainWindow):
         self.parse_result = parsed
         self.file_name.setText(document.path.name)
         self.file_path.setText(str(document.path))
-        self.file_path.setToolTip(str(document.path))
+        self.file_path.setToolTip(plain_tooltip(str(document.path)))
         self.setWindowTitle(f"{document.path.name} — SIF Viewer")
         records = f"{len(parsed.records):,} products" if parsed.available else "table unavailable"
         self.metadata.setText(f"{document.path.name}  |  {format_size(document.size)}  |  "
                               f"{document.line_count:,} lines  |  {records}  |  {document.encoding}")
-        self.metadata.setToolTip(f"{document.path}\nLine endings: {document.newline_style}")
+        self.metadata.setToolTip(plain_tooltip(f"{document.path}\nLine endings: {document.newline_style}"))
         note = "Read-only · Original files are never changed."
         if document.encoding_note:
             note += " " + document.encoding_note
@@ -632,7 +636,7 @@ class MainWindow(QMainWindow):
         self._set_idle()
         self.statusBar().showMessage("File could not be opened", 8000)
         if not self._closing:
-            QMessageBox.warning(self, "Cannot Open File", message)
+            QMessageBox.warning(self, "Cannot Open File", plain_tooltip(message))
 
     def _worker_finished(self, worker):
         if self._worker is worker:

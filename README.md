@@ -1,4 +1,4 @@
-# SIF Viewer 1.4.4
+# SIF Viewer 1.4.5
 
 A read-only Windows desktop viewer for contract furniture `.sif` files. Built
 with Python 3 and PySide6. Opening a file never writes to that file. CSV export
@@ -296,6 +296,31 @@ explicit parser changes. Unsupported dialects should keep their Raw View fallbac
 
 ## Encodings and limits
 
+Version 1.4.5 displays file-derived labels as plain text and escapes file-derived
+tooltips and dialog messages. HTML-looking descriptions and headers remain literal
+text; they cannot introduce image tags through those displays. Tooltips show at
+most 8,192 source characters; full values remain in the raw text and exports.
+
+Resource limits protect against unusually complex input:
+
+| Resource | Limit | Behavior above limit |
+| --- | --- | --- |
+| Physical SIF lines / reversible CSV data rows | 500,000 | Open/conversion fails clearly; existing document or destination is retained |
+| Characters per physical SIF line | 262,144 | Open/conversion fails clearly |
+| Products | 50,000 | Table unavailable; Raw View and reversible export remain available |
+| Distinct uninterpreted columns | 128 | Table unavailable; Raw View and reversible export remain available |
+| Fields per product | 4,096 | Table unavailable; Raw View and reversible export remain available |
+| Source characters per product | 1,048,576 | Table unavailable; Raw View and reversible export remain available |
+| Header fields / characters | 4,096 / 1,048,576 | Table unavailable; Raw View and reversible export remain available |
+| Numeric source spelling | 256 characters | Source retained with a warning; excluded from calculations |
+
+Repeated scalar fields are accumulated and joined once per product. Parsing checks
+for cancellation between physical lines. Reversible CSV import also bounds physical
+CSV line lengths before splitting columns and bounds individual cell sizes. No
+limit silently drops products or truncates exported source values. The existing
+20,000-product responsiveness test and all 22 available real sample files passed
+with these limits, including unchanged-source and byte-identical round-trip checks.
+
 - ASCII / strict UTF-8, UTF-8 BOM, and BOM-marked UTF-16 / UTF-32 are supported.
 - Windows-1252 is the strict fallback for non-UTF-8 legacy text. It is labelled
   **assumed**, with an ambiguity notice. Other legacy encodings cannot be
@@ -414,7 +439,7 @@ licenses.
 The single-file installer is:
 
 ```text
-dist\installer\SIF-Viewer-1.4.4-Setup-x64.exe
+dist\installer\SIF-Viewer-1.4.5-Setup-x64.exe
 ```
 
 Send that Setup EXE to recipients. They do not need the portable folder, Python,
