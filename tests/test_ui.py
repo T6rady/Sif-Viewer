@@ -25,6 +25,44 @@ from ui.main_window import MainWindow
 
 
 class UiTests(unittest.TestCase):
+    def test_hidden_kentucky_disco_activation_and_cleanup(self):
+        self.assertFalse(self.window.disco.isVisible())
+        self.assertFalse(self.window.disco.logo.isNull())
+        for _ in range(4):
+            QTest.mouseClick(self.window.file_badge, Qt.MouseButton.LeftButton)
+        self.assertFalse(self.window.disco.isVisible())
+        QTest.mouseClick(self.window.file_badge, Qt.MouseButton.LeftButton)
+        self.assertTrue(self.window.disco.isVisible())
+        self.assertTrue(self.window.disco.timer.isActive())
+        self.window.disco.stop()
+        self.assertFalse(self.window.disco.isVisible())
+        self.assertFalse(self.window.disco.timer.isActive())
+
+    def test_update_check_button_and_silent_startup_failure(self):
+        with patch.object(self.window.update_checker, "check") as check:
+            self.window.update_button.click()
+            check.assert_called_once()
+            self.assertFalse(self.window.update_button.isEnabled())
+        with patch("ui.main_window.QMessageBox.information") as info:
+            self.window._update_checked(None, "Connection failed")
+            self.assertIn("Connection failed", info.call_args.args)
+            self.assertTrue(self.window.update_button.isEnabled())
+            info.reset_mock()
+            self.window._update_checked(None, "Connection failed")
+            info.assert_not_called()
+
+    def test_update_notification_opens_github_only_when_chosen(self):
+        with patch("ui.main_window.QMessageBox") as message, patch(
+                "ui.main_window.QDesktopServices.openUrl") as open_url:
+            dialog = message.return_value
+            download = object()
+            dialog.addButton.side_effect = [download, object()]
+            dialog.clickedButton.return_value = download
+            self.window._update_checked("1.5.0", "")
+            self.assertIn("1.5.0", dialog.setText.call_args.args[0])
+            self.assertEqual(open_url.call_args.args[0].toString(),
+                             "https://github.com/T6rady/Sif-Viewer/releases/latest")
+
     def test_file_markup_stays_literal_in_headers_cells_tooltips_and_dialogs(self):
         from PySide6.QtGui import QTextDocument
         from ui.plain_text import plain_tooltip, MAX_TOOLTIP_CHARACTERS

@@ -18,6 +18,9 @@ from ui.table_view import TableView
 from ui.theme import palette_for, stylesheet_for
 from ui.plain_text import plain_tooltip
 from core.resource_limits import ProcessingCancelled
+from core.updates import RELEASES_URL
+from ui.update_checker import UpdateChecker
+from ui.disco import DiscoOverlay
 
 
 class LoadWorker(QThread):
@@ -110,11 +113,46 @@ class MainWindow(QMainWindow):
         self._export_worker = None
         self._busy = False
         self._closing = False
+        self._manual_update_check = False
+        self.update_checker = UpdateChecker(QApplication.applicationVersion(), self)
+        self.update_checker.completed.connect(self._update_checked)
         self._build_ui()
+        self.disco = DiscoOverlay(self)
+        self._disco_clicks = 0
+        self._disco_click_timer = QTimer(self)
+        self._disco_click_timer.setSingleShot(True)
+        self._disco_click_timer.setInterval(1800)
+        self._disco_click_timer.timeout.connect(self._reset_disco_clicks)
+        self._disco_escape = QShortcut(QKeySequence("Escape"), self)
+        self._disco_escape.activated.connect(self.disco.stop)
         self.table.set_details_visible(self.settings.value("view/detailsVisible", True, type=bool))
         self.dark_action.setChecked(self.settings.value("view/theme", "light") == "dark")
         self._apply_theme()
         self._refresh_default_app_button()
+
+    def check_for_updates(self, manual=False):
+        self._manual_update_check = self._manual_update_check or manual
+        self.update_button.setEnabled(False)
+        self.update_checker.check()
+
+    def _update_checked(self, version, error):
+        self.update_button.setEnabled(True)
+        manual, self._manual_update_check = self._manual_update_check, False
+        if self._closing:
+            return
+        if version:
+            dialog = QMessageBox(self)
+            dialog.setWindowTitle("Update available")
+            dialog.setTextFormat(Qt.TextFormat.PlainText)
+            dialog.setText(f"SIF Viewer {version} is available.\nInstalled version: {self.update_checker.installed}")
+            download = dialog.addButton("Open download page", QMessageBox.ButtonRole.AcceptRole)
+            dialog.addButton("Later", QMessageBox.ButtonRole.RejectRole)
+            dialog.exec()
+            if dialog.clickedButton() == download:
+                QDesktopServices.openUrl(QUrl(RELEASES_URL))
+        elif manual:
+            QMessageBox.information(self, "Check for updates", error or
+                                    f"SIF Viewer {self.update_checker.installed} is up to date.")
 
     def _refresh_default_app_button(self):
         self.default_app_button.setVisible(not is_default_sif_app())
@@ -176,6 +214,8 @@ class MainWindow(QMainWindow):
         header_layout.setContentsMargins(22, 14, 22, 14)
         header_layout.setSpacing(12)
         badge = QLabel("SIF")
+        self.file_badge = badge
+        badge.installEventFilter(self)
         badge.setObjectName("fileBadge")
         badge.setFixedSize(34, 34)
         badge.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -224,6 +264,9 @@ class MainWindow(QMainWindow):
         path_row.addWidget(self.default_app_button)
         file_info.addLayout(path_row)
         header_layout.addLayout(file_info, 1)
+        self.update_button = QPushButton("Check for updates…")
+        self.update_button.clicked.connect(lambda: self.check_for_updates(manual=True))
+        header_layout.addWidget(self.update_button)
         self.theme_button = QToolButton()
         self.theme_button.setDefaultAction(self.dark_action)
         self.theme_button.setAccessibleName("Dark mode")
@@ -669,7 +712,24 @@ class MainWindow(QMainWindow):
         else:
             event.ignore()
 
+    def _reset_disco_clicks(self):
+        self._disco_clicks = 0
+
+    def eventFilter(self, watched, event):
+        if (watched is getattr(self, "file_badge", None)
+                and event.type() == QEvent.Type.MouseButtonRelease
+                and event.button() == Qt.MouseButton.LeftButton):
+            self._disco_clicks += 1
+            self._disco_click_timer.start()
+            if self._disco_clicks == 5:
+                self._reset_disco_clicks()
+                self._disco_click_timer.stop()
+                self.disco.start()
+        return super().eventFilter(watched, event)
+
     def closeEvent(self, event):
+        self._closing = True
+        self.update_checker.cancel()
         running = [worker for worker in (self._worker, self._export_worker)
                    if worker is not None and worker.isRunning()]
         if running:

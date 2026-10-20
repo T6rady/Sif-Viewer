@@ -1,10 +1,11 @@
-# SIF Viewer 1.4.5
+# SIF Viewer 1.4.6
 
 A read-only Windows desktop viewer for contract furniture `.sif` files. Built
 with Python 3 and PySide6. Opening a file never writes to that file. CSV export
 writes a separate file. Reversible CSV conversion can create a separate SIF;
 in-place SIF editing and comparison are unavailable. The installed application
-works offline and makes no network requests.
+works offline. At launch it checks GitHub for a newer stable release in the
+background; a failed automatic check is silent and does not interrupt viewing.
 
 ## Run on this computer
 
@@ -39,10 +40,22 @@ py -3 -m venv .venv
 ```
 
 Dependency installation needs Internet access or pre-downloaded wheels; using
-the viewer afterward is entirely offline. Virtual environment activation is
+the viewer afterward supports offline use. Virtual environment activation is
 unnecessary. `requirements.txt` pins the tested PySide6 and PyInstaller versions.
 
 ## Using the viewer
+
+- **Check for updates…** compares the running app version with the latest stable
+  GitHub release from `T6rady/Sif-Viewer`. A check also runs once at startup with
+  a 10-second network timeout. Newer releases show the installed and available
+  versions and an **Open download page** button. Download and run the Setup EXE
+  from that page to update; the viewer does not install updates automatically.
+  Manual checks report connection errors or confirm that the app is up to date.
+  Release tags must use `vMAJOR.MINOR.PATCH` or `MAJOR.MINOR.PATCH`; drafts and
+  prereleases are excluded. Checks send no SIF contents or file paths.
+  The repository and stable release must be publicly accessible: private GitHub
+  repositories return 404 to the unauthenticated installed app. A separate public
+  release repository can be used to distribute installers while keeping source private.
 
 - **Set default .sif app…** below the file name explains the steps and opens
   **Windows Settings → Apps → Default apps**. Search for `.sif` and choose
@@ -439,7 +452,7 @@ licenses.
 The single-file installer is:
 
 ```text
-dist\installer\SIF-Viewer-1.4.5-Setup-x64.exe
+dist\installer\SIF-Viewer-1.4.6-Setup-x64.exe
 ```
 
 Send that Setup EXE to recipients. They do not need the portable folder, Python,
